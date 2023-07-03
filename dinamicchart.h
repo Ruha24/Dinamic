@@ -7,6 +7,7 @@
 #include <QChartView>
 #include <QFileDialog>
 
+
 class DinamicChart : public QMainWindow
 {
     Q_OBJECT
@@ -15,15 +16,12 @@ public:
     explicit DinamicChart(QWidget *parent = nullptr);
     ~DinamicChart();
 
-
 protected:
     void wheelEvent(QWheelEvent *event) override;
-
 
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
-
 
 private slots:
     void stopChart();
@@ -34,16 +32,24 @@ private slots:
 
 private:
 
-    void zoomChart(qreal scaleFactor);
-    void moveChartLeft(int delta);
-    void moveChartRight(int delta);
+    void setupTimer();
     void setupChart();
-    void setupConnection();
     void setupButton();
-    void updateChart();
+    void setupConnection();
+
+    qreal pointToLineDistance(const QPointF& point, const QPointF& lineP1, const QPointF& lineP2);
+
+    void zoomChart(qreal scaleFactor);
     void zoomIn();
     void zoomOut();
+
+    void moveChartLeft(int delta);
+    void moveChartRight(int delta);
+
+    void updateChart();
+
     void updateAxisXRange();
+
     void showDataToolTip(QPointF point, bool state);
 
     QTimer* timer;

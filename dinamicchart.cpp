@@ -1,21 +1,16 @@
 #include "dinamicchart.h"
 
 DinamicChart::DinamicChart(QWidget *parent)
-    : QMainWindow(parent)
+    : QMainWindow(parent), chartRunning(true)
 {
     setupChart();
 
-    timer = new QTimer(this);
-
-    timer->start(100);
-
-    chartView->chart()->axisY(series)->setRange(0, 100);
-    chartRunning = true;
     setMouseTracking(true);
-
+    setupTimer();
     setupButton();
     setupConnection();
 }
+
 
 DinamicChart::~DinamicChart()
 {
@@ -24,6 +19,7 @@ DinamicChart::~DinamicChart()
     delete axisX;
 }
 
+// устанавливает соединения сигналов и слотов для таймера, кнопок и серии графика.
 void DinamicChart::setupConnection()
 {
     connect(timer, &QTimer::timeout, this, &DinamicChart::updateChart);
@@ -34,6 +30,15 @@ void DinamicChart::setupConnection()
     connect(series, &QLineSeries::hovered, this, &DinamicChart::showDataToolTip);
 }
 
+// создает и запускает таймер с интервалом 100 миллисекунд.
+void DinamicChart::setupTimer()
+{
+    timer = new QTimer(this);
+
+    timer->start(100);
+}
+
+// создает меню функций и кнопку "Функции" для отображения меню.
 void DinamicChart::setupButton()
 {
     functionsMenu = new QMenu(this);
@@ -48,10 +53,11 @@ void DinamicChart::setupButton()
     functionsButton->setGeometry(0, 25, 100, 30);
 }
 
+// создает график, серию, оси и представление графика, а также настраивает начальные значения осей.
 void DinamicChart::setupChart()
 {
     series = new QLineSeries();
-
+    series->setName("Line");
     QChart *chart = new QChart();
     chart->addSeries(series);
 
@@ -69,53 +75,44 @@ void DinamicChart::setupChart()
     series->attachAxis(axisY);
 
     chartView = new QChartView(chart);
-    // chartView->setAttribute(Qt::WA_AlwaysShowToolTips);
 
     chartView->setAttribute(Qt::WA_TransparentForMouseEvents);
+
+    qint64 currentTimestamp = QDateTime::currentMSecsSinceEpoch();
+    qint64 range = 10000;
+    qint64 minTimestamp = currentTimestamp - range;
+    qint64 maxTimestamp = currentTimestamp;
+    QDateTime minDateTime = QDateTime::fromMSecsSinceEpoch(minTimestamp);
+    QDateTime maxDateTime = QDateTime::fromMSecsSinceEpoch(maxTimestamp);
+    axisX->setRange(minDateTime, maxDateTime);
+    axisY->setRange(0, 1000);
 
     setCentralWidget(chartView);
 }
 
+
+// отображает всплывающую подсказку с данными точки графика при наведении мыши на точку.
 void DinamicChart::showDataToolTip(QPointF point, bool state)
 {
     if (state) {
         QDateTime xDateTime = QDateTime::fromMSecsSinceEpoch(static_cast<qint64>(point.x()));
         QString tooltipText = QString("Дата: %1\nЗначение: %2").arg(xDateTime.toString("dd/MM/yyyy hh:mm:ss")).arg(point.y());
-                                  QToolTip::showText(chartView->mapToGlobal(QCursor::pos()), tooltipText, chartView);
+
+        QPoint tooltipPos = chartView->mapToGlobal(QCursor::pos());
+        QToolTip::showText(tooltipPos, tooltipText, chartView);
     } else {
         QToolTip::hideText();
     }
 }
 
+// обновляет график, добавляя случайное значение в серию и выполняя анимацию для новой точки.
 void DinamicChart::updateChart()
 {
-    qreal value = QRandomGenerator::global()->bounded(1000);
+    qreal value = QRandomGenerator::global()->bounded(100);
     qint64 timestamp = QDateTime::currentMSecsSinceEpoch();
 
     if (chartRunning) {
         series->append(timestamp, value);
-        qint64 range = 10000;
-        qint64 minTimestamp = timestamp - range;
-        qint64 maxTimestamp = timestamp;
-        QDateTime minDateTime = QDateTime::fromMSecsSinceEpoch(minTimestamp);
-        QDateTime maxDateTime = QDateTime::fromMSecsSinceEpoch(maxTimestamp);
-        chartView->chart()->axisX(series)->setMin(minDateTime);
-        chartView->chart()->axisX(series)->setMax(maxDateTime);
-
-        qreal minY = std::numeric_limits<qreal>::max();
-        qreal maxY = std::numeric_limits<qreal>::min();
-        for (int i = 0; i < series->count(); ++i) {
-            QPointF point = series->at(i);
-            if (point.y() < minY) {
-                minY = point.y();
-            }
-            if (point.y() > maxY) {
-                maxY = point.y();
-            }
-        }
-        qreal padding = 0.1 * (maxY - minY);
-        chartView->chart()->axisY(series)->setMin(minY - padding);
-        chartView->chart()->axisY(series)->setMax(maxY + padding);
 
         if (series->count() >= 2) {
             QPointF prevPoint = series->at(series->count() - 2);
@@ -134,6 +131,10 @@ void DinamicChart::updateChart()
 
                 QCoreApplication::processEvents();
 
+                if (!chartRunning) {
+                    break;
+                }
+
                 QThread::msleep(1);
             }
         }
@@ -141,11 +142,9 @@ void DinamicChart::updateChart()
     else {
         series->append(timestamp, 0);
     }
-
-    chartView->chart()->update();
 }
 
-
+// приостанавливает или возобновляет обновление графика при нажатии на кнопку "Stop"/"Continue".
 void DinamicChart::toggleChart()
 {
     if (chartRunning)
@@ -161,7 +160,7 @@ void DinamicChart::toggleChart()
     chartRunning = !chartRunning;
 }
 
-
+// останавливает обновление графика и изменяет текст кнопки на "Continue".
 void DinamicChart::stopChart()
 {
     timer->stop();
@@ -171,6 +170,7 @@ void DinamicChart::stopChart()
     chartRunning = false;
 }
 
+// обрабатывает событие прокрутки колеса мыши для масштабирования графика.
 void DinamicChart::wheelEvent(QWheelEvent *event)
 {
     if (event->angleDelta().y() > 0)
@@ -178,7 +178,6 @@ void DinamicChart::wheelEvent(QWheelEvent *event)
     else
         chartView->chart()->zoomOut();
 }
-
 
 void DinamicChart::zoomIn()
 {
@@ -216,9 +215,10 @@ void DinamicChart::zoomChart(qreal scaleFactor)
     dynamic_cast<QValueAxis*>(axisY)->setMin(newMinY);
     dynamic_cast<QValueAxis*>(axisY)->setMax(newMaxY);
 
-     chartView->chart()->update();
+    chartView->chart()->update();
 }
 
+// обновляет диапазон оси X в соответствии с данными серии графика.
 void DinamicChart::updateAxisXRange()
 {
     QDateTimeAxis *axisX = qobject_cast<QDateTimeAxis*>(chartView->chart()->axisX(series));
@@ -233,7 +233,7 @@ void DinamicChart::updateAxisXRange()
     }
 }
 
-
+// сохраняет изображение графика в картинку
 void DinamicChart::saveChartImage()
 {
     QString fileName = QFileDialog::getSaveFileName(this, "Save Image", "", "Images (*.png *.jpg)");
@@ -244,6 +244,7 @@ void DinamicChart::saveChartImage()
 }
 
 
+// сохраняет данные серии графика в файл CSV
 void DinamicChart::saveChartToCSV()
 {
     QString fileName = QFileDialog::getSaveFileName(this, "Save Chart", "", "CSV Files (*.csv)");
@@ -264,6 +265,9 @@ void DinamicChart::saveChartToCSV()
     }
 }
 
+
+
+// загружает данные серии графика из файла CSV.
 void DinamicChart::loadChartFromCSV()
 {
     QString fileName = QFileDialog::getOpenFileName(this, "Load Chart", "", "CSV Files (*.csv)");
@@ -291,8 +295,7 @@ void DinamicChart::loadChartFromCSV()
     }
 }
 
-
-
+// обрабатывает нажатие кнопкой мыши
 void DinamicChart::mousePressEvent(QMouseEvent *event)
 {
 
@@ -301,68 +304,151 @@ void DinamicChart::mousePressEvent(QMouseEvent *event)
         isMousePressed = true;
     }
 }
+
+// Передвижение графика влево
 void DinamicChart::moveChartLeft(int delta)
 {
     QDateTimeAxis* axisX = dynamic_cast<QDateTimeAxis*>(chartView->chart()->axisX(series));
     if (axisX) {
         qint64 minX = axisX->min().toMSecsSinceEpoch();
         qint64 maxX = axisX->max().toMSecsSinceEpoch();
-        qreal dampingFactor = 0.05;
 
-        qint64 newMinX = minX - dampingFactor * delta;
-        qint64 newMaxX = maxX - dampingFactor * delta;
+        qreal fullRange = maxX - minX;
+        qreal currentRange = axisX->max().toMSecsSinceEpoch() - axisX->min().toMSecsSinceEpoch();
+
+        qint64 newMinX = minX - (delta * currentRange / fullRange);
+        qint64 newMaxX = newMinX + currentRange;
 
         axisX->setMin(QDateTime::fromMSecsSinceEpoch(newMinX));
         axisX->setMax(QDateTime::fromMSecsSinceEpoch(newMaxX));
 
         chartView->chart()->scroll(delta, 0);
-        chartView->chart()->update();
     }
 }
 
+// Передвижение графика вправо
 void DinamicChart::moveChartRight(int delta)
 {
     QDateTimeAxis* axisX = dynamic_cast<QDateTimeAxis*>(chartView->chart()->axisX(series));
     if (axisX) {
         qint64 minX = axisX->min().toMSecsSinceEpoch();
         qint64 maxX = axisX->max().toMSecsSinceEpoch();
-        qreal dampingFactor = 0.05;
 
-        qint64 newMinX = minX + dampingFactor * delta;
-        qint64 newMaxX = maxX + dampingFactor * delta;
+        qreal fullRange = maxX - minX;
+        qreal currentRange = axisX->max().toMSecsSinceEpoch() - axisX->min().toMSecsSinceEpoch();
+
+        qint64 newMaxX = maxX + (delta * currentRange / fullRange);
+        qint64 newMinX = newMaxX - currentRange;
 
         axisX->setMin(QDateTime::fromMSecsSinceEpoch(newMinX));
         axisX->setMax(QDateTime::fromMSecsSinceEpoch(newMaxX));
 
         chartView->chart()->scroll(-delta, 0);
-        chartView->chart()->update();
     }
 }
+
 
 void DinamicChart::mouseMoveEvent(QMouseEvent* event)
 {
     if (isMousePressed) {
+        // Вычисление изменения положения мыши относительно предыдущей позиции
         QPoint delta = event->pos() - lastMousePos;
         lastMousePos = event->pos();
 
         int deltaX = delta.x();
         int maxDeltaX = 10000;
 
+        // Ограничение значения deltaX до диапазона [-maxDeltaX, maxDeltaX]
         if (deltaX < -maxDeltaX) {
             deltaX = -maxDeltaX;
         } else if (deltaX > maxDeltaX) {
             deltaX = maxDeltaX;
         }
 
+        // Перемещение графика вправо или влево в зависимости от значения deltaX
         if (deltaX > 0) {
             moveChartRight(deltaX);
         } else if (deltaX < 0) {
             moveChartLeft(-deltaX);
         }
     } else {
-        QWidget::mouseMoveEvent(event);
+        QPointF mousePoint = chartView->chart()->mapToValue(event->pos());
+        // Проверка, находится ли позиция мыши внутри области графика
+        bool contains = chartView->chart()->plotArea().contains(event->pos());
+
+        qreal threshold = 5.0;
+
+        bool isCloseToLine = false;
+        for (const auto& series : chartView->chart()->series()) {
+            auto lineSeries = qobject_cast<QLineSeries*>(series);
+            if (lineSeries) {
+                for (int i = 0; i < lineSeries->count() - 1; ++i) {
+                    QPointF p1 = lineSeries->at(i);
+                    QPointF p2 = lineSeries->at(i + 1);
+                    // Вычисление расстояния от точки мыши до линии
+                    qreal distance = pointToLineDistance(mousePoint, p1, p2);
+
+                    // Проверка, находится ли расстояние в пределах порогового значения
+                    if (distance <= threshold) {
+                        isCloseToLine = true;
+                        break;
+                    }
+                }
+
+                if (isCloseToLine)
+                    break;
+            }
+        }
+
+        // Показ подсказки с данными, если позиция мыши близка к линии графика
+        if (contains && isCloseToLine && mousePoint.x() >= axisX->min().toMSecsSinceEpoch() && mousePoint.x() <= axisX->max().toMSecsSinceEpoch()) {
+            showDataToolTip(mousePoint, true);
+        } else {
+            showDataToolTip(mousePoint, false);
+        }
     }
+    QWidget::mouseMoveEvent(event);
 }
+
+
+qreal DinamicChart::pointToLineDistance(const QPointF& point, const QPointF& lineP1, const QPointF& lineP2)
+{
+    qreal dx = lineP2.x() - lineP1.x();
+    qreal dy = lineP2.y() - lineP1.y();
+
+    qreal len_sq = dx * dx + dy * dy;
+
+    if (len_sq == 0.0) {
+        // Линия является точкой, возвращаем расстояние до точки lineP1
+        qreal dx1 = point.x() - lineP1.x();
+        qreal dy1 = point.y() - lineP1.y();
+        return qSqrt(dx1 * dx1 + dy1 * dy1);
+    }
+
+    qreal t = ((point.x() - lineP1.x()) * dx + (point.y() - lineP1.y()) * dy) / len_sq;
+
+    if (t < 0.0) {
+        // Ближе к lineP1
+        qreal dx2 = point.x() - lineP1.x();
+        qreal dy2 = point.y() - lineP1.y();
+        return qSqrt(dx2 * dx2 + dy2 * dy2);
+    } else if (t > 1.0) {
+        // Ближе к lineP2
+        qreal dx3 = point.x() - lineP2.x();
+        qreal dy3 = point.y() - lineP2.y();
+        return qSqrt(dx3 * dx3 + dy3 * dy3);
+    }
+
+    // Ближе к отрезку
+    qreal projX = lineP1.x() + t * dx;
+    qreal projY = lineP1.y() + t * dy;
+
+    qreal dx4 = point.x() - projX;
+    qreal dy4 = point.y() - projY;
+
+    return qSqrt(dx4 * dx4 + dy4 * dy4);
+}
+
 
 void DinamicChart::mouseReleaseEvent(QMouseEvent *event)
 {
@@ -375,6 +461,5 @@ void DinamicChart::mouseReleaseEvent(QMouseEvent *event)
     }
 
     QWidget::mouseReleaseEvent(event);
-
 }
 
